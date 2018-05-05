@@ -54,7 +54,8 @@ int main()
 		cin.ignore();
 		return 1;
 	}
-
+	
+	//Sửa chỗ này thành IP của máy ảo
 	char c_serveraddr[50] = "192.168.18.128";
 	//cin >> c_serveraddr;
 	//cin.ignore();
