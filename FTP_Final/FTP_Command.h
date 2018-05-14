@@ -31,6 +31,7 @@ class Program {
 		int List();
 		int Port();
 		int Store();
+		int Retrieve();
 };
 
 //int Login(SOCKET&, sockaddr_in&);

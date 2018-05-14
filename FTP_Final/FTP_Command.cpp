@@ -138,7 +138,7 @@ int Program::Menu() {
 
 	//Thêm các tùy chọn cho menu
 	menu.Add("List", &Program::List);
-	//menu.Add("Dir", Dir);
+	menu.Add("Get", &Program::Retrieve);
 	menu.Add("Store", &Program::Store);
 
 login:
@@ -180,6 +180,9 @@ int Program::Send(SOCKET& sock, string s, int flag) {
 	else {
 		if (!IsAbsolutePath(s))
 			s = current_dir + s;
+		
+		if (s[0] == '\"' && s[s.size() - 1] == '\"')
+			s = s.substr(1, s.size() - 2);
 		FILE *f = fopen(s.c_str(), "rb");
 		char buf[MAX_BUFF + 1];
 		int len = 0;
@@ -190,6 +193,8 @@ int Program::Send(SOCKET& sock, string s, int flag) {
 			send(sock, buf, len, 0);
 			memset(buf, 0, MAX_BUFF + 1);
 		}
+
+		fclose(f);
 	}
 	return 0;
 }
@@ -221,8 +226,7 @@ int Program::Recv(SOCKET& sock, string s, int flag) {
 	else
 		cout << buf;
 
-	int len = strlen(buf);
-	while (buf[len-2] != '\r' && buf[len-1] != '\n' && len >= 2) {
+	while (buf[byteRcv-2] != '\r' || buf[byteRcv-1] != '\n') {
 		memset(buf, 0, MAX_BUFF + 1);
 		byteRcv = recv(sock, buf, MAX_BUFF, 0);
 
@@ -234,6 +238,9 @@ int Program::Recv(SOCKET& sock, string s, int flag) {
 		else
 			cout << buf;
 	}
+	if (f)
+		fclose(f);
+
 	return atoi(Code);
 }
 
@@ -344,6 +351,41 @@ int Program::Store() {
 	return Recv(command, "", 0);
 }
 
+int Program::Retrieve() {
+	string filename;
+	string msg;
+	sockaddr_in my_addr;
+
+	cin.ignore();
+	cout << "Nhap ten file: ";
+	getline(cin, filename);
+
+	Port();
+	Recv(command, "", 0);
+	my_addr.sin_port = htons(dataport);
+	data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SetupIPWS(data, my_addr, false);
+	
+	msg = "RETR " + filename + "\r\n";
+	Recv(command, "", 0);
+	Send(command, msg, 0);
+	Recv(command, "", 0);
+
+	//Chờ kết nối của server đến socket data
+	if (listen(data, SOMAXCONN) == SOCKET_ERROR) {
+		printf("Listen failed with error: %ld\n", WSAGetLastError());
+		closesocket(data);
+		WSACleanup();
+		return 1;
+	}
+	SOCKET s = accept(data, NULL, NULL);
+	Recv(s, filename, 1);
+	Recv(command, "", 0);
+
+	closesocket(data);
+	closesocket(s);
+	return 0;
+}
 /*
 int Login(SOCKET& sock, sockaddr_in& svip) {
 	char user[256] = { 0 };
