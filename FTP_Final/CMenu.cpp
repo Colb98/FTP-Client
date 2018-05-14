@@ -1,16 +1,15 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 
 using namespace std;
 
-CMenu::CMenu(SOCKET *asock, sockaddr_in* ip) {
+CMenu::CMenu(Program *prog) {
 	option.push_back("Quit");
 	function.push_back(nullptr);
-	sock = asock;
-	myip = ip;
+	p = prog;
 }
 
 
-void CMenu::Add(string name, int(*f)(SOCKET&, sockaddr_in&)) {
+void CMenu::Add(string name, int(Program::*f)()) {
 	option.insert(option.end() - 1, name);
 	function.insert(function.end() - 1, f);
 }
@@ -37,7 +36,9 @@ int CMenu::Select() {
 	i = stoi(s);
 	if (i == option.size())
 		return 404;
-
-
-	return function[i - 1](*sock,*myip);
+	
+	//Đừng đọc :v
+	//f là hàm "giả" của class Program. Gán hàm này bằng 1 hàm thật rồi chạy nó
+	p->f = function[i - 1];
+	return (p->*(p->f))();
 }

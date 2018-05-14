@@ -7,15 +7,14 @@ private:
 	//Mảng tên dòng tùy chọn
 	std::vector<std::string> option;
 	//Mảng các hàm
-	std::vector<int(*)(SOCKET&, sockaddr_in&)> function;
+	std::vector<int(Program::*)()> function;
 	//SOCKET hiện hành
-	SOCKET *sock;
-	sockaddr_in *myip;
+	Program *p;
 public:
 	//Khởi tạo
-	CMenu(SOCKET*, sockaddr_in*);
+	CMenu(Program*);
 	//Thêm dòng mới
-	void Add(std::string name, int(*f)(SOCKET&, sockaddr_in&));
+	void Add(std::string name, int(Program::*f)());
 	//Hiển thị các dòng tùy chọn
 	void Show();
 	//Yêu cầu chọn, trả về kết quả của hàm được chọn
