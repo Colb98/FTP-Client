@@ -2,7 +2,8 @@
 //using namespace std;
 
 
-int SetupIPWS(SOCKET& Sock, sockaddr_in& MyIP, bool randomport) {
+int SetupIPWS(SOCKET& Sock, sockaddr_in& MyIP, bool randomport)
+{
 
 	srand(time(NULL));
 
@@ -10,7 +11,7 @@ int SetupIPWS(SOCKET& Sock, sockaddr_in& MyIP, bool randomport) {
 	if (randomport)
 		MyIP.sin_port = htons(rand() % PORT_RANGE + 1024);
 	MyIP.sin_addr.s_addr = INADDR_ANY;
-	
+
 
 	int nResult = bind(Sock, (struct sockaddr*)&MyIP, sizeof(struct sockaddr));
 	if (nResult) {
@@ -26,7 +27,8 @@ int SetupIPWS(SOCKET& Sock, sockaddr_in& MyIP, bool randomport) {
 int Connect(SOCKET& Sock, sockaddr_in& server) {
 	int try_count = 0;
 	bool error_flag = true;
-	while (try_count < ERROR_LIMIT) {
+	while (try_count < ERROR_LIMIT)
+	{
 		int nResult = connect(Sock, (sockaddr*)&server, sizeof(struct sockaddr));
 		if (nResult == -1) {
 			//Không thể kết nối
@@ -40,7 +42,7 @@ int Connect(SOCKET& Sock, sockaddr_in& server) {
 			try_count = 5;
 		}
 	}
-	if (error_flag) 
-		return 1;	
+	if (error_flag)
+		return 1;
 	return 0;
 }

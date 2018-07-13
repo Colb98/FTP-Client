@@ -32,7 +32,7 @@ char* GetCode(char* message, char* code) {
 
 	while (message[0] != ' ' && i < MAX_BUFF) {
 		if (message[0] < '0' || message[0] > '9') {
-			memset(code, 0, 10);
+			memset(code, 0, 10 - i);
 			return NULL;
 		}
 
@@ -80,9 +80,9 @@ void GetLocalAddress(SOCKET& sock, unsigned char& a, unsigned char& b, unsigned 
 //Kiểm tra đường dẫn là tuyệt đối hay tương đối 
 //(nếu là tương đối thì phải gắn thêm đường dẫn hiện hành vào)
 //Đường dẫn tuyệt đối phải bắt đầu bằng tên ổ đĩa (?) vd: C:\a\b\c\d.txt
-bool IsAbsolutePath(string s) {
+bool IsAbsolutePath(string s)
+{
 	int len = s.size();
-
 	//Bỏ dấu ngoặc kép nếu có
 	if (s[0] == '\"' && s[len - 1] == '\"') {
 		s = s.substr(1);
@@ -109,7 +109,7 @@ string GetFileName(string path) {
 	}
 
 	//Tìm dấu \ đầu tiên từ phải qua rồi cắt lấy tên file
-	for (i = len - 1;i >= 0;i--)
+	for (i = len - 1; i >= 0; i--)
 		if (path[i] == '\\')
 			break;
 
@@ -122,6 +122,7 @@ Program::Program(const SOCKET& c, sockaddr_in &sv) {
 	data = 0;
 	sv_address = sv;
 	current_dir = "";
+	in_passive = false;
 }
 
 Program::Program(const SOCKET& c, sockaddr_in &sv, string s) {
@@ -129,18 +130,32 @@ Program::Program(const SOCKET& c, sockaddr_in &sv, string s) {
 	data = 0;
 	sv_address = sv;
 	current_dir = s;
+	in_passive = false;
 }
 
 int Program::Menu() {
 	int nResult;
 	int i = 0;
+	bool showMenu = true;
 	CMenu menu(this);
 
 	//Thêm các tùy chọn cho menu
 	menu.Add("List", &Program::List);
 	menu.Add("Get", &Program::Retrieve);
-	menu.Add("Store", &Program::Store);
+	menu.Add("mGet", &Program::mRetrieve);
 
+	menu.Add("put", &Program::Store);
+	menu.Add("mPut", &Program::mStore);
+	menu.Add("Cd", &Program::Cwd);
+	menu.Add("Lcd", &Program::Lcd);
+	menu.Add("Delete", &Program::Dele);
+	menu.Add("mDelete", &Program::mDele);
+	
+	menu.Add("Mkdir", &Program::MakeDir);
+	menu.Add("Rmdir", &Program::RemoveDir);
+	menu.Add("Pwd", &Program::PrintWorkingDir);
+	menu.Add("Switch Modes", &Program::SwitchModes);
+	
 login:
 	nResult = Login();
 	if (nResult != 230) {
@@ -153,7 +168,7 @@ login:
 	}
 
 	//Hiện menu, yêu cầu làm
-	bool showMenu = true;
+	
 	do {
 		if (showMenu) {
 			menu.Show();
@@ -173,23 +188,31 @@ quit:
 
 //Gửi qua socket tin s hoặc nội dung file có đường dẫn là s
 //Flag = 0: tin. Flag = 1: file
-int Program::Send(SOCKET& sock, string s, int flag) {
+int Program::Send(SOCKET& sock, string s, int flag) 
+{
 	if (flag == 0) {
 		send(sock, s.c_str(), s.length(), 0);
 	}
-	else {
+	else
+	{
 		if (!IsAbsolutePath(s))
 			s = current_dir + s;
-		
+
 		if (s[0] == '\"' && s[s.size() - 1] == '\"')
 			s = s.substr(1, s.size() - 2);
 		FILE *f = fopen(s.c_str(), "rb");
+		if (f == NULL)
+		{
+			cout << "Ban Nhap Duong Dan Sai,File khong ton tai " << endl;
+			return 0;
+		}
 		char buf[MAX_BUFF + 1];
 		int len = 0;
 
 		memset(buf, 0, MAX_BUFF + 1);
 
-		while (len = fread(buf, 1, MAX_BUFF, f)) {
+		while (len = fread(buf, 1, MAX_BUFF, f)) 
+		{
 			send(sock, buf, len, 0);
 			memset(buf, 0, MAX_BUFF + 1);
 		}
@@ -217,7 +240,7 @@ int Program::Recv(SOCKET& sock, string s, int flag) {
 	}
 	memset(buf, 0, MAX_BUFF + 1);
 	byteRcv = recv(sock, buf, MAX_BUFF, 0);
-	if(byteRcv > 0)
+	if (byteRcv > 0)
 		gc(buf, Code);
 
 	//Ghi vào file hoặc in ra màn hình
@@ -226,7 +249,7 @@ int Program::Recv(SOCKET& sock, string s, int flag) {
 	else
 		cout << buf;
 
-	while (buf[byteRcv-2] != '\r' || buf[byteRcv-1] != '\n') {
+	while (buf[byteRcv - 2] != '\r' || buf[byteRcv - 1] != '\n') {
 		memset(buf, 0, MAX_BUFF + 1);
 		byteRcv = recv(sock, buf, MAX_BUFF, 0);
 
@@ -269,34 +292,42 @@ int Program::Quit() {
 	return 0;
 }
 
-int Program::List() {
-	data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	sockaddr_in my_addr;
-	
-	//Yêu cầu server gửi data trên port "dataport"
-	Port();
+int Program::List()
+{
+	string filename;
+	cout << "Nhap ten folder muon xem: ";
+	cin >> filename;
+	cin.ignore();
 
-	//Gắn socket lên ip chính mình và port "dataport"
-	my_addr.sin_port = htons(dataport);
-	SetupIPWS(data, my_addr, false);
-		
+	char detailed = 'Y';
+	do {
+		cout << "Xem chi tiet ? (Y/N): ";
+		cin >> detailed;
+		detailed = toupper(detailed);
+	} while (detailed != 'Y' && detailed != 'N');
+
+	string msg = detailed == 'Y' ? "LIST " : "NLST ";
+	msg += filename + "\r\n";
+
+	//Mở kết nối data
+	OpenDataConnection(true);
+
 	Recv(command, "", 0);
-	Send(command, "NLST\r\n", 0);
+	Send(command, msg, 0);
 	Recv(command, "", 0);
 
-	//Chờ kết nối của server đến socket data
-	if (listen(data, SOMAXCONN) == SOCKET_ERROR) {
-		printf("Listen failed with error: %ld\n", WSAGetLastError());
-		closesocket(data);
-		WSACleanup();
-		return 1;
+	if (in_passive) {
+		Recv(data, "", 0);
 	}
-	SOCKET s = accept(data, NULL, NULL);
-	Recv(s, "", 0);
+	else {
+		SOCKET s = accept(data, NULL, NULL);
+		Recv(s, "", 0);
+		closesocket(s);
+	}
 	
 	closesocket(data);
-	closesocket(s);
-	return 0;
+
+	return Recv(command, "", 0);
 }
 
 int Program::Port() {
@@ -307,7 +338,7 @@ int Program::Port() {
 	string msg;
 
 	port = rand() % PORT_RANGE + 1024;
-	
+
 	PortConvert(port, a, b);
 	GetLocalAddress(command, c, d, e, f);
 	dataport = port;
@@ -319,70 +350,369 @@ int Program::Port() {
 	return Recv(command, "", 0);
 }
 
+int Program::PassivePort(unsigned int& port) {
+	unsigned int a, b;
+	unsigned int c, d, e, f;
+
+	string msg = "PASV\r\n";
+	Send(command, msg, 0);
+	char buffer[MAX_BUFF + 1];
+	char Code[10] = { 0 };
+	unsigned int byteRecv = recv(command, buffer, MAX_BUFF, 0);
+	buffer[byteRecv] = '\0';
+	cout << buffer;
+	gc(buffer, Code);
+
+	int start = byteRecv - 1;
+	while (start >= 0 && buffer[start] != '(') {
+		start--;
+	}
+	int end = start + 1;
+	while (end < byteRecv && buffer[end] != ')') {
+		end++;
+	}
+
+	if (end == byteRecv || start < 0) {
+		return atoi(Code);
+	}
+	
+	char hostnport[MAX_BUFF + 1] = { 0 };
+	for (int i = start + 1; i < end; i++) {
+		hostnport[i - start - 1] = buffer[i];
+	}
+
+	sscanf(hostnport, "%u,%u,%u,%u,%u,%u", &c, &d, &e, &f, &a, &b);
+
+	port = a * 16 * 16 + b;
+
+	dataport = rand() % PORT_RANGE + 1024;
+	return atoi(Code);
+}
+
 int Program::Store() {
 	string filename;
 	string msg;
-	sockaddr_in my_addr;
 
 	cin.ignore();
 	cout << "Nhap ten file: ";
 	getline(cin, filename);
-
-	Port();
-	Recv(command, "", 0);
-
-	//Gắn socket vào port "dataport"
-	my_addr.sin_port = htons(dataport);
-	data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	SetupIPWS(data, my_addr, false);
-		
+	
+	OpenDataConnection(false);
 
 	msg = "STOR " + GetFileName(filename) + "\r\n";
 	Send(command, msg, 0);
 	Recv(command, "", 0);
 
-	sockaddr_in sv_data_addr;
-	sv_data_addr = sv_address;
-	sv_data_addr.sin_port = htons(SERVER_D_PORT);
-	Connect(data, sv_data_addr);
-
+	if (!in_passive) {
+		ActivateDataConnection();
+	}
+	
 	Send(data, filename, 1);
+
 	closesocket(data);
+
+	return Recv(command, "", 0);	
+}
+
+int  Program::mStore()
+{
+	int countFile;
+	string filename;
+	string msg;
+	do
+	{	
+		cout << "Nhap so file can gui(nhap So): " << endl;
+		cin >> countFile;
+		if (countFile < 0)
+		{
+			cout << "Ban nhap So File  < 0 , vui long nhap lai" << endl;
+		}
+	} while (countFile < 0 );
+
+	cin.ignore();
+	for (int i = 1; i <= countFile; i++)
+	{
+		//// Check server address
+		//cout << (unsigned int)sv_address.sin_addr.S_un.S_un_b.s_b1 << "."
+		//	 << (unsigned int)sv_address.sin_addr.S_un.S_un_b.s_b2 << "."
+		//	 << (unsigned int)sv_address.sin_addr.S_un.S_un_b.s_b3 << "."
+		//	 << (unsigned int)sv_address.sin_addr.S_un.S_un_b.s_b4 << "\n";
+
+		cout << "Nhap ten file: ";
+		getline(cin, filename);
+
+		//Mở kết nối data
+		OpenDataConnection(false);
+
+		msg = "STOR " + GetFileName(filename) + "\r\n";
+		Send(command, msg, 0);
+		Recv(command, "", 0);
+
+		if (!in_passive) {
+			ActivateDataConnection();
+		}
+
+		Send(data, filename, 1);
+
+		closesocket(data);
+		Recv(command, "", 0);
+	}
+
 	return Recv(command, "", 0);
 }
 
 int Program::Retrieve() {
 	string filename;
 	string msg;
-	sockaddr_in my_addr;
 
 	cin.ignore();
 	cout << "Nhap ten file: ";
 	getline(cin, filename);
 
-	Port();
-	Recv(command, "", 0);
-	my_addr.sin_port = htons(dataport);
-	data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	SetupIPWS(data, my_addr, false);
-	
+	OpenDataConnection(true);
+
 	msg = "RETR " + filename + "\r\n";
-	Recv(command, "", 0);
 	Send(command, msg, 0);
 	Recv(command, "", 0);
 
-	//Chờ kết nối của server đến socket data
-	if (listen(data, SOMAXCONN) == SOCKET_ERROR) {
-		printf("Listen failed with error: %ld\n", WSAGetLastError());
-		closesocket(data);
-		WSACleanup();
-		return 1;
+	if (in_passive) {
+		Recv(data, filename, 1);
 	}
-	SOCKET s = accept(data, NULL, NULL);
-	Recv(s, filename, 1);
-	Recv(command, "", 0);
+	else {
+		SOCKET s = accept(data, NULL, NULL);
+		Recv(s, filename, 1);
+		closesocket(s);
+	}
 
 	closesocket(data);
-	closesocket(s);
+	Recv(command, "", 0);
 	return 0;
+}
+int Program::mRetrieve()
+{
+	int countFile;
+	string filename;
+	string msg;
+	do
+	{
+		cout << "Nhap so file can Nhan(nhap So): " << endl;
+		cin >> countFile;
+		if (countFile < 0)
+		{
+			cout << "Ban nhap So File  <= 0 , vui long nhap lai" << endl;
+		}
+	} while (countFile <= 0);
+
+	cin.ignore();
+	for (int i = 1; i <= countFile; i++)
+	{
+		cout << "Nhap ten file: ";
+		getline(cin, filename);
+	
+		OpenDataConnection(true);
+		
+		msg = "RETR " + GetFileName(filename) + "\r\n";
+		Send(command, msg, 0);
+		Recv(command, "", 0);
+	
+		if (in_passive) {
+			Recv(data, filename, 1);
+		}
+		else {
+			SOCKET s = accept(data, NULL, NULL);
+			Recv(s, filename, 1);
+			closesocket(s);
+		}
+
+		closesocket(data);
+		Recv(command, "", 0);
+	}
+
+	Recv(command, "", 0);
+	return 0;
+}
+int Program::Cwd()
+{
+	string filename;
+	string msg;
+
+	cin.ignore();
+	cout << "Nhap ten thu muc: ";
+	getline(cin, filename);
+
+	////Yêu cầu server gửi data trên port "dataport"
+	//Port();
+	//Recv(command, "", 0);
+
+	////Gắn socket vào port "dataport"
+	//my_addr.sin_port = htons(dataport);
+	//data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	//SetupIPWS(data, my_addr, false);
+
+
+	msg = "CWD " + GetFileName(filename) + "\r\n";
+	Send(command, msg, 0);
+	Recv(command, "", 0);
+	//closesocket(data);
+	return 0;
+}
+
+int Program::Lcd()
+{
+	string path;
+	cout << "Nhap Duong dan can thay doi duoi client: " << endl;
+	cin >> path;
+	current_dir = path;
+	cout << "Successful " << endl;
+	return 0;
+}
+
+int  Program::Dele()
+{
+	//data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	//sockaddr_in my_addr;
+
+	////Yêu cầu server gửi data trên port "dataport"
+	//Port();
+	//Recv(command, "", 0);
+
+	////Gắn socket lên ip chính mình và port "dataport"
+	//my_addr.sin_port = htons(dataport);
+	//SetupIPWS(data, my_addr, false);
+
+	string filename;
+	string msg;
+
+	cin.ignore();
+	cout << "Nhap ten file can XOA: ";
+	getline(cin, filename);
+	msg = "DELE " + filename + "\r\n";
+	Send(command, msg, 0);
+	Recv(command, "", 0);
+	//closesocket(data);
+	return 0;
+}
+
+int Program::mDele()
+{
+	int countFile;
+	string filename;
+	string msg;
+	//sockaddr_in my_addr;
+	do
+	{
+		cout << "Nhap so file can Xoa(nhap So): " << endl;
+		cin >> countFile;
+		if (countFile < 0)
+		{
+			cout << "Ban nhap So File  <= 0 , vui long nhap lai" << endl;
+		}
+	} while (countFile <= 0);
+	cin.ignore();
+
+	for (int i = 1; i <= countFile; i++)
+	{
+		//data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		////Yêu cầu server gửi data trên port "dataport"
+		//Port();
+		//Recv(command, "", 0);
+
+		////Gắn socket lên ip chính mình và port "dataport"
+		//my_addr.sin_port = htons(dataport);
+		//SetupIPWS(data, my_addr, false);
+
+		cout << "Nhap ten file can XOA: ";
+		getline(cin, filename);
+		msg = "DELE " + filename + "\r\n";
+		Send(command, msg, 0);
+		Recv(command, "", 0);
+		//closesocket(data);
+	}
+	return 0;
+}
+
+int Program::MakeDir() {
+	string dirName;
+	cout << "Nhap ten thu muc muon tao: ";
+	cin >> dirName;
+
+	string msg = "MKD " + dirName + "\r\n";
+
+	Send(command, msg, 0);
+	return Recv(command, "", 0);
+}
+
+int Program::RemoveDir() {
+	string filename;
+	cout << "Nhap ten folder muon xoa: ";
+	cin >> filename;
+
+	string msg = "RMD " + filename + "\r\n";
+	Send(command, msg, 0);
+	return Recv(command, "", 0);
+}
+
+int Program::PrintWorkingDir() {
+	string msg = "PWD\r\n";
+
+	Send(command, msg, 0);
+	return Recv(command, "", 0);
+}
+
+int Program::SwitchModes() {
+	if (in_passive) {
+		cout << "Active Mode On\n";
+	}
+	else {
+		cout << "Passive Mode On\n";
+	}
+	return in_passive = !in_passive;
+}
+
+int Program::OpenDataConnection(bool forListen) {
+	sockaddr_in my_addr;
+	unsigned int port;
+	if (!in_passive) {
+		Port();
+	}
+	else {
+		PassivePort(port);
+	}
+
+	//Gắn socket lên ip chính mình và port "dataport"
+	my_addr.sin_port = htons(dataport);
+	data = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SetupIPWS(data, my_addr, false);
+
+	if (in_passive) {
+		sockaddr_in sv_data_addr;
+		sv_data_addr = sv_address;
+		sv_data_addr.sin_port = htons(port);
+
+		return Connect(data, sv_data_addr);
+	}
+	else if (forListen) {
+		if (Recv(command, "", 0) != 550) {
+			//Chờ kết nối của server đến socket data
+			if (listen(data, SOMAXCONN) == SOCKET_ERROR) {
+				printf("Listen failed with error: %ld\n", WSAGetLastError());
+				closesocket(data);
+				WSACleanup();
+				return 1;
+			}
+			return 0;
+		}
+		else {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int Program::ActivateDataConnection() {
+	sockaddr_in sv_data_addr;
+	sv_data_addr = sv_address;
+	sv_data_addr.sin_port = htons(SERVER_D_PORT);
+
+	return Connect(data, sv_data_addr);
 }

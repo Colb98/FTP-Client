@@ -18,7 +18,7 @@ void CMenu::Show() {
 	int i = 0;
 	int n = option.size();
 
-	for (;i < n;i++) {
+	for (; i < n; i++) {
 		cout << i + 1 << ". ";
 		cout << option[i] << endl;
 	}
@@ -28,7 +28,7 @@ void CMenu::Show() {
 int CMenu::Select() {
 	string s;
 	int i;
-	cout << "Ban lua chon: ";
+	cout << "Ban lua chon: (Ghi Bang So)  ";
 	cin >> s;
 	if (s == "m" || s == "menu" || s == "help")
 		return 400;
@@ -36,7 +36,7 @@ int CMenu::Select() {
 	i = stoi(s);
 	if (i == option.size())
 		return 404;
-	
+
 	//Đừng đọc :v
 	//f là hàm "giả" của class Program. Gán hàm này bằng 1 hàm thật rồi chạy nó
 	p->f = function[i - 1];
